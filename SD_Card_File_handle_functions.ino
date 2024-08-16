@@ -41,7 +41,7 @@ bool setup_SD(){
         return true;
     }else{
         Serial.println("SD Card not inserted.");  // Print the message "SD Card Initialization Failed" to the serial monitor
-        drawArrayJpeg(SD_Warning_Image, sizeof(SD_Warning_Image), 0, 0); // Darw the RL logo jpeg image from memory
+        drawArrayJpeg(SD_Warning_Image, sizeof(SD_Warning_Image), 0, 0); // Darw the jpeg image from memory
         delay(3000);
         SD_Card_Inserted = false;
         return false;
@@ -70,6 +70,15 @@ void display_Card_type(){
 }
 
 void SD_Logger(){
+  if(!SD_Card_Inserted){
+    Serial.println("No SD card present. Data wont be logged.");
+    displayNotification("           NO SD Card.,,   Data won't be logged.,,  Please insert SD Card.", true);
+    delay(2000);
+    esp_task_wdt_reset();
+    tft.fillScreen(TFT_BLACK);
+    updateTFTDisplay();
+    return;
+  }
   esp_task_wdt_reset();
   Serial.printf("[Info] Beginning SD card Logging for %d minutes.\n", log_duration_min);
   buttonDoubleClickFlag = true;

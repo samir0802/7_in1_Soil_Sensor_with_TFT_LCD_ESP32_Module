@@ -15,6 +15,7 @@ bool connectToMQTT(){
 
     if (WiFi.status() == WL_CONNECTED){
         Serial.println("[Info] Connecting to MQTT.");
+        mqtt.setClient(mqtt_client);
     } else {
         Serial.println("[Warning] No Connection to MQTT, WiFi not connected...");
         return false;
@@ -45,8 +46,12 @@ bool connectToMQTT(){
         Serial.print("[Warning] MQTT connection failed, MQTT State: ");
         Serial.println(mqtt.state());
         mqtt_conn_err_count++;
-        return false;         
+        // if(mqtt_conn_err_count > 4){
+        //   mqtt_conn_err_count = 0;
+        // }
+          return false;
     }
+    // if(!mqtt.connected()) return false;         
 
     mqtt_conn_err_count = 0; //reset counter
     online_stat = String(mqttClientId) + "Online.."; 
@@ -75,10 +80,15 @@ void publishToMQTT(String topic, String message) {
         Serial.println("WiFi Connected!! Trying to publish to MQTT");
         if (mqtt.publish(pubtopic, pubmessage, true)) {
             Serial.println("\n[Info] WiFi MQTT Message Published successfully");
+            MQTT_publish_flag = true;
         } else {
             Serial.println("\n[Warning] WiFi MQTT Message publication failed");
+            MQTT_publish_flag = false;
+            publish_failed_count++;
         }
     } else {
         Serial.println("[Warning] Publishing Failed, No WiFi Connection...");
+        MQTT_publish_flag = false;
+        publish_failed_count++;
     }
 }

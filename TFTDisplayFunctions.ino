@@ -136,11 +136,63 @@ void displayHotspotInfo() {
   tft.drawString("192.168.4.1", tft.width()/2, tft.height()/2 + 50);
   tft.drawString("to change settings.", tft.width() / 2, tft.height() / 2 + 70);
   esp_task_wdt_reset();
-  delay(15000);
+  delay(30000);
   buttonLongPressFlag = false;
   // buttonFlag = false;
   tft.fillScreen(TFT_BLACK);
   esp_task_wdt_reset();
   updateTFTDisplay();
   esp_task_wdt_reset();
+}
+
+// Function to Display anytext as Info
+void displayNotification(const String& message, bool centerText) {
+  esp_task_wdt_reset();  // Reset the watchdog timer
+
+  tft.fillScreen(TFT_BLACK);  // Clear the screen with black
+
+  // Set up text color and size for the notification
+  tft.setTextColor(TFT_WHITE, TFT_BLACK);
+  tft.setTextSize(1);  // Smaller text size for better fitting
+  tft.setTextDatum(TL_DATUM);  // Top left datum for easier line control
+
+  // Define the maximum width for text and split message into lines
+  int maxWidth = tft.width() - 40;  // Maximum width with some padding
+  int maxCharsPerLine = maxWidth / (6 * tft.textsize);  // Approximation based on text size
+
+  String line;
+  int startPos = 0;
+  int length = message.length();
+  int yPos = centerText ? (tft.height() / 2) - ((length / maxCharsPerLine) * 10) : 30;  // Center or top position
+
+  while (startPos < length) {
+    int commaPos = message.indexOf(',', startPos);
+    int lineEnd = (commaPos != -1 && commaPos < startPos + maxCharsPerLine) ? commaPos : startPos + maxCharsPerLine;
+    line = message.substring(startPos, lineEnd);
+
+    // Ensure the line doesn't cut off mid-word unless a comma is found
+    if (lineEnd < length && message.charAt(lineEnd) != ' ' && commaPos == -1) {
+      int lastSpace = line.lastIndexOf(' ');
+      if (lastSpace != -1) {
+        line = line.substring(0, lastSpace);
+        startPos -= (maxCharsPerLine - lastSpace);
+      }
+    }
+
+    tft.drawString(line, 20, yPos);  // Draw each line
+    yPos += 20;  // Move down for the next line
+    startPos += line.length();
+
+    if (commaPos != -1) {
+      startPos++;  // Skip the comma
+    }
+  }
+
+  // Delay to allow the user to read the message
+  delay(3000);  // Display for 3 seconds, adjust as needed
+
+  // Clear the screen or go back to previous display
+  tft.fillScreen(TFT_BLACK);  // Clear the screen with black
+  esp_task_wdt_reset();  // Reset the watchdog timer
+  updateTFTDisplay();  // Update the main display
 }

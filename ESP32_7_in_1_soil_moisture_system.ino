@@ -63,26 +63,28 @@ Command: 'Set_moisture_threshold_max=', Set the maximum threshold value for the 
 Command: 'Set_sensor_test_timer=', Set the time interval to test the sensor
 */
 #include <HardwareSerial.h>
-#include <OneButton.h>    // Include the OneButton library
-#include <Preferences.h>  //Include the Preferences library for storing the preferences
+#include <OneButton.h>                                                // Include the OneButton library
+#include <Preferences.h>                                             //Include the Preferences library for storing the preferences
 
-#include <WebServer.h>  // Include the WebServer library for hosting a webpage
-#include <WiFi.h>  //Include the WiFi library for connecting to the internet
-#include <WiFiClientSecure.h>// Include the WiFiClientSecure library for connecting to the internet
-#include <PubSubClient.h>   // Include the PubSubClient library for sending and receiving messages from the MQTT broker
+#include <WebServer.h>                                                // Include the WebServer library for hosting a webpage
+#include <WiFi.h>                                                     //Include the WiFi library for connecting to the internet
+#include <WiFiClientSecure.h>                                         // Include the WiFiClientSecure library for connecting to the internet
+#include <PubSubClient.h>                                              // Include the PubSubClient library for sending and receiving messages from the MQTT broker
 
 
-#include "FS.h"  //Include the FS library for reading and writing files
-#include "SPIFFS.h" // Include the SPIFFS library fro reading and writing files
-#include "ArduinoJson.h" // Include the ArduinoJson library for parsing JSON data
-#include "SPI.h"  // Include the SPI library for SPI communication
-#include "SD.h"   // Include the SD library for reading and writing files
+#include "FS.h"                                                      //Include the FS library for reading and writing files
+#include "SPIFFS.h"                                                   // Include the SPIFFS library fro reading and writing files
+#include "ArduinoJson.h"                                            // Include the ArduinoJson library for parsing JSON data
+#include "SPI.h"                                                    // Include the SPI library for SPI communication
+#include "SD.h"                                                       // Include the SD library for reading and writing files
 
-#include <PNGdec.h> // PNG decoder Library
-#include "ramlaxmann_logo.h" // RL Logo Image is stored in an 8-bit array
-#include "soil_monitor_image.h" // Image of Soil MOnitor logo
-#include "SD_Warning_image.h"   // Image of SD Card Not inserted warning
-#include "Flash_Initialization_Info_Image.h" //Image of SPIFFS Initialization Info
+#include <PNGdec.h>                                                  // PNG decoder Library
+#include "ramlaxmann_logo.h"                                        // RL Logo Image is stored in an 8-bit array
+#include "soil_monitor_image.h"                                     // Image of Soil MOnitor logo
+#include "SD_Warning_image.h"                                       // Image of SD Card Not inserted warning
+#include "Flash_Initialization_Info_Image.h"                        //Image of SPIFFS Initialization Info
+#include "SD_Available_Info_Image.h"                                 //Image of SD Card Detection 
+#include "Hotspot_ON_Info_Image.h"                                  // Image of Hotspot QR
 
 #include <TFT_eSPI.h>  //Include the TFT_eSPI library for controlling the LCD
 #include <JPEGDecoder.h> // JPEG decoder library
@@ -129,8 +131,8 @@ uint threshold_min;
 uint threshold_max;
 String MQTT_broker_ID;  // MQTT broker ID
 int MQTT_broker_port;   // MQTT broker port
-const char* mqttUsername = "";
-const char* mqttPassword = "";
+const char* mqttUsername;
+const char* mqttPassword;
 
 String mqttClientId;
 String chipIdString;
@@ -147,7 +149,7 @@ String mqttLastWillMessage = ", Offline.";
 String WiFi_SSID;  // WiFi SSID
 String WiFi_PASS;  // WiFi password
 WiFiClient mqtt_client;     // MQTT client
-PubSubClient mqtt(mqtt_client); // MQTT client
+PubSubClient mqtt; // MQTT client
 
 // Set the timer for testing the sensors
 long sensor_test_timer = 6000;   // Set the timer for testing the sensors
@@ -169,11 +171,13 @@ long wifi_check_timer ;
 long wifi_timeout_period = 15;
 long MQTT_send_timer;
 long MQTT_post_period = 15;
+int publish_failed_count= 0;
 long wifi_disconnect_period_minutes = 25;
 long WifiDisconnectiontimer;
 
 // bool variables to store condition of wifi connection
 bool WifiConnected = false;
+bool MQTT_publish_flag = false;
 
 const int btn = 0;  //boot button;              // User Switch, long press to activate hotspot
 
@@ -228,14 +232,14 @@ void setup() {
 
   Soil_Modbus.begin(9600, SERIAL_8N1, 35, 22);
   Serial.begin(115200);  // Start the serial communication
-  if (!SPIFFS.begin(true)){
-      Serial.println("An Error has occurred while mounting SPIFFS");
-      SPIFFS_Mounted = false;
-      // return;
-  }else{
-      Serial.println("SPIFFS mounted successfully");
-      SPIFFS_Mounted = true;
-  }
+  // if (!SPIFFS.begin(true)){
+  //     Serial.println("An Error has occurred while mounting SPIFFS");
+  //     SPIFFS_Mounted = false;
+  //     // return;
+  // }else{
+  //     Serial.println("SPIFFS mounted successfully");
+  //     SPIFFS_Mounted = true;
+  // }
 
   xTaskCreatePinnedToCore(
   ButtonTASK_CORE0
@@ -270,13 +274,14 @@ void setup() {
 
   // Start the microSD card
   long SD_Load_or_Not_Timer = millis();
-  while(!setup_SD() && millis() - SD_Load_or_Not_Timer < 5000){
+  while(!setup_SD() && millis() - SD_Load_or_Not_Timer < 10000){
   }
   if(!SD_Card_Inserted){
-    if(SPIFFS_Mounted){
       drawArrayJpeg(Flash_Init_Info_Image, sizeof(Flash_Init_Info_Image), 0, 0); // Darw the RL logo jpeg image from memory
       delay(3000);
-    }
+  }else {
+      drawArrayJpeg(SD_Available_Info_Image, sizeof(SD_Available_Info_Image), 0, 0);
+      delay(3000);
   }
   delay(2000);
 
@@ -291,15 +296,19 @@ void setup() {
 
   MQTT_send_timer = 60000 * log_duration_min;  // Set the timer for sending the sensor values to the MQTT broker
 
-  preferences.begin("moisture_config", false);  // Start the preferences object with the namespace "sensor_settings"
+  preferences.begin("moisture_config", true);  // Start the preferences object with the namespace "sensor_settings"
   // preferences.clear();                // Clear the preferences
   WiFi_SSID = preferences.getString("_WiFi_SSID", "evonelectric_2");   //TP-LINK_A5AFEA         // Get the WiFi SSID from the preferences
   WiFi_PASS = preferences.getString("_WiFi_PASS", "CLB2778B39");        //79641494          // Get the WiFi password from the preferences
   threshold_min = preferences.getInt("_threshold_min", 20);                     // Get the minimum threshold value from the preferences
   threshold_max = preferences.getInt("_threshold_max", 80);                     // Get the maximum threshold value from the preferences
-  MQTT_broker_ID = preferences.getString("_MQTT_broker_ID", "202.52.240.148");  // Get the MQTT broker ID from the preferences
-  MQTT_broker_port = preferences.getInt("_MQTT_broker_port", 5065);             // Get the MQTT broker port from the preferences
-  device_location = preferences.getString("_device_location", "Somewhere");  // Get the device location from the preferences
+  MQTT_broker_ID = preferences.getString("_MQTT_broker_ID", "117.121.236.115");  // Get the MQTT broker ID from the preferences
+  MQTT_broker_port = preferences.getInt("_MQTT_broker_port", 1883);             // Get the MQTT broker port from the preferences
+  String mqtt_Username = preferences.getString("_MQTT_username", "technology");           // Get the MQTT username from preferences
+  String mqtt_Password = preferences.getString("_MQTT_userpass", "Technology@2023");     // Get the MQTT password from preferences
+  mqttUsername = mqtt_Username.c_str();
+  mqttPassword = mqtt_Password.c_str();
+  device_location = preferences.getString("_test_location", "Somewhere");  // Get the device location from the preferences
   preferences.end();  // End the preferences object
 
   Serial.printf("\n\n---------------------------------Soil Monitoring Device Started-----------------------------------\n\n");                                                                                                                                                                                           // Print the message "Device Started" to the serial monitor
@@ -364,7 +373,6 @@ void setup() {
 }
 void loop() {
 
-  mqtt.loop();  // Loop the MQTT client
   // button.tick();  // Check the button state
   handle_webserver();  // Handle the webserver
 
@@ -382,34 +390,51 @@ void loop() {
     blink_led(false, NO_LED);       // Turn off the LEDs to show end of sensor reading
   }
   delay(1000);
-  if(millis() - wifi_check_timer >= wifi_timeout_period*1000){
-    if (WiFi.status() != WL_CONNECTED) {
-      WifiConnected = false;
-      Serial.println("Reconnecting to WiFi...");
-      WiFi.begin(WiFi_SSID.c_str(), WiFi_PASS.c_str());
-      delay(2000);
-    }else{
-      Serial.println("Wifi Connected!!.");
-      WifiConnected = true;
+
+
+  
+  if(!hotspot_activated){
+    mqtt.loop();  // Loop the MQTT client
+    if(millis() - wifi_check_timer >= wifi_timeout_period*1000){
+      if (WiFi.status() != WL_CONNECTED) {
+        WifiConnected = false;
+        Serial.println("Reconnecting to WiFi...");
+        WiFi.begin(WiFi_SSID.c_str(), WiFi_PASS.c_str());
+        delay(2000);
+      }else{
+        Serial.println("Wifi Connected!!.");
+        WifiConnected = true;
+      }
+      wifi_check_timer = millis();
+
     }
-    wifi_check_timer = millis();
+    
+    if(WifiConnected && (millis()- MQTT_send_timer >= MQTT_post_period*1000)){
+      // blink_led(true, BLUE_LED, 2000);                                                      // blink BLUE led to show MQTT publish has started
+      String soil_message= "";
+      for(int i = 0; i < num_sensor_values; i++){
+        soil_message += sensor_names[i] +"="+sensor_values[i] + ",";
+      }
+      publishToMQTT(mqttPublishTopic.c_str(), soil_message.c_str());
+      MQTT_send_timer = millis();
+      // blink_led(false, NO_LED);
+    } else{
+      if(publish_failed_count > 8 && buttonDoubleClickFlag != true){
+        Serial.println("MQTT publishing failing. Restarting the device.");
+        connectToMQTT();
+        delay(1000);
+        if(!mqtt.connected()) ESP.restart();
+      }
+    }
+  } else {
+    
+
   }
   if(millis() - WifiDisconnectiontimer >= wifi_disconnect_period_minutes*60*1000){
     Serial.println("Wifi connection Failed for too long. Restarting the device...");
     delay(100);
     blink_led(true, RED_LED, 2000);                                                       // Blink RED LED to show device is restarting 
-    // ESP.restart();
-  }
-
-  if(WifiConnected && (millis()- MQTT_send_timer >= MQTT_post_period*1000)){
-    // blink_led(true, BLUE_LED, 2000);                                                      // blink BLUE led to show MQTT publish has started
-    String soil_message= "";
-    for(int i = 0; i < num_sensor_values; i++){
-      soil_message += sensor_names[i] +"="+sensor_values[i] + ",";
-    }
-    publishToMQTT(mqttPublishTopic.c_str(), soil_message.c_str());
-    MQTT_send_timer = millis();
-    // blink_led(false, NO_LED);
+    ESP.restart();
   }
   delay(2000);
 }
@@ -453,7 +478,6 @@ void blink_led( bool led_active, const int led_color, int interval){
 }
 
 
-
 // // Serial Configuration Functions, read serial if At commands match update the preferences
 // void serial_configuration(){
 //     String set_threshold_min = "Set_moisture_threshold_min=";
@@ -484,7 +508,7 @@ void blink_led( bool led_active, const int led_color, int interval){
 //             }
 //         }
 //         preferences.begin("moisture_config", false);  // Start the preferences object with the namespace "sensor_settings"
-//         preferences.putString("_device_location", device_location);  // Put the device location in the preferences
+//         preferences.putString("_test_location", device_location);  // Put the device location in the preferences
 //         preferences.end();  // End the preferences object
 
 //         mqttClientId  = device_location + "_NPK"+ chipIdString;

@@ -10,7 +10,7 @@ void drawArrayJpeg(const uint8_t arrayname[], uint32_t array_size, int xpos, int
 
   JpegDec.decodeArray(arrayname, array_size);
   
-  jpegInfo(); // Print information from the JPEG file (could comment this line out)
+  // jpegInfo(); // Print information from the JPEG file (could comment this line out)
   
   renderJPEG(x, y);
   
